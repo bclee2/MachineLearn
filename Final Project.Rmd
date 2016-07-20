@@ -1,0 +1,88 @@
+---
+title: "Practical Machine Learning Final Project"
+output: word_document
+---
+
+
+#Introduction:
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+#Data Preparation
+First we set the seed, load in the data, and load the necessary packages
+```{r}
+set.seed(12345)
+trainURL <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testURL <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+training <- read.csv(url(trainURL), na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv(url(testURL), na.strings=c("NA","#DIV/0!",""))
+
+library(caret)
+library(rattle)
+library(rpart)
+library(randomForest)
+```
+Remove the first 7 columns as they are not predictive variables
+```{r}
+training = training[,-(1:7)]
+```
+Partition the data set into a training and test set for cross validation
+```{r}
+InTrain <- createDataPartition(training$classe, p=0.7, list=FALSE)
+Training1 <- training[InTrain, ]
+Testing1 <- training[-InTrain, ]
+```
+Remove variables that have near zero variance as they won't be predictive
+```{r}
+nzv <- nearZeroVar(Training1, saveMetrics=TRUE)
+Training1 <- Training1[,nzv$nzv==FALSE]
+```           
+Only include variables that have less than 10% NA as they won't be predictive
+```{r}
+NAFunc <- function(x) 
+{
+  n <- length(x)
+  count <- sum(is.na(x))
+  return((n - count)/n)
+}
+
+PctNA <- apply(Training1, 2, NAFunc)
+Training2 <- Training1[, PctNA > 0.9]
+```
+Since I did some data compression to the training data, I want to do the same compression to the test data.  In the below step we are only including variables in the test sets that are in the training set
+```{r}
+Testing2=Testing1[,colnames(Training2)]
+FinalTesting=testing[,colnames(Training2)[-53]]
+```
+#Classification Tree Prediction
+First I fit the training data using the rpart method in the caret package, and I plot the resulting tree
+```{r}
+FitClass <- train(classe ~ ., data=Training2, method="rpart")
+fancyRpartPlot(FitClass$finalModel)
+```
+After the model is fit, I cross validate using the holdout data set to check accuracy of the model.  The accuracy is low at %
+```{r}
+PredClass <- predict(FitClass$finalModel, newdata=Testing2, type="class")
+ConfuseClass <- confusionMatrix(PredClass, Testing2$classe)
+ConfuseClass
+```
+#Random Forest Prediction
+I fit the training data using the rf method in the caret package.  After, I cross validated using the holdout data set to check the accuracy of the model.  The accuracy is very high at 98.91% and a 95% confidence interval of 0.9861 and 0.9916
+```{r}
+FitRF <- train(classe ~ ., method = "rf", data=Training2)
+PredRF <- predict(FitRF$finalModel, newdata=Testing2, type = "class")
+ConfuseRF <- confusionMatrix(PredRF, Testing2$classe)
+ConfuseRF
+```
+#Out of Sample Error Rate
+The out of sample error rate is 0.67%, which is low a further indicates that our model has predictive power.
+```{r}
+FitRF$finalModel
+```
+#Predict The Class From The Test Data
+I decided to use the random forest model because there was a very accurate fit, which was demonstrated by a low out of sample error rate and high accuracy of the predictions for the test set.
+```{r}
+FinalPrediction <- predict(FitRF$finalModel, newdata=FinalTesting, type = "class")
+FinalPrediction
+```
